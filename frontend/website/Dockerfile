@@ -1,6 +1,7 @@
 # FROM node:14-alpine AS development
 # ENV NODE_ENV development
-FROM node
+# pinned: Next 12 breaks on Node 22+ (SlowBuffer removed)
+FROM node:18
 WORKDIR /app
 COPY package.json .
 RUN npm install

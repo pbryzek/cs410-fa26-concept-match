@@ -140,3 +140,6 @@ dmypy.json
 cicd.sh
 
 vicuna*
+
+# local data snapshots (scripts/load_snapshot.py)
+/data/
