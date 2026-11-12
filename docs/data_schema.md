@@ -23,9 +23,9 @@ Each exported proposal includes the following fields. The field types below are 
 - `external_urls`: array of strings. External links extracted from the proposal.
 - `external_domains`: array of strings. Distinct external hostnames.
 - `hashtags`: array of strings. Hashtags extracted from title and description.
-- `time`: string. Raw submission timestamp from the snapshot.
+- `time`: integer or null. Raw submission timestamp in milliseconds.
 - `type`: string. Submission category, typically `"submission"`.
-- `community_id`: string. Community ID when present in the source.
+- `community_id`: string. Community ID propagated from the top-level snapshot metadata.
 - `source`: string. Source label, always `"textdata"` in this export.
 - `raw_text_for_indexing`: string. Combined text used for a fallback index.
 
@@ -36,13 +36,15 @@ The exporter explicitly handles the following issues so the dataset is consisten
 - Null or missing `description`: converted to an empty string instead of crashing the export.
 - Markdown links like `[text](url)`: the visible text is kept; the URL itself is stripped out of `description_clean` and `clean_text`.
 - Plain URLs embedded in the description: removed from the cleaned text but preserved in `internal_urls` or `external_urls` arrays.
+- URLs from `source_url`: included in URL extraction even when they are not repeated in the description body.
 - Duplicate URLs: deduplicated via a set before saving to the final JSON object.
 - Duplicate hashtags: deduplicated and lowercased before saving.
+- Hyphenated hashtags such as `#information-retrieval` and `#query-expansion`: preserved correctly.
 - Mixed casing / whitespace differences: whitespace is normalized, hashtags are lowercased, and domain names are lowercased.
 - Records with no URLs or hashtags: still exported normally; those lists simply remain empty arrays.
 - Records with no `source_url`: saved as an empty string instead of `null`.
 - Records where the title or description is blank: exported with empty strings, but the record stays in the dataset so the team can still inspect missing metadata.
-- Internal vs external URL classification: any URL whose host contains `textdata.org` is assigned to `internal_urls`; all other URLs are assigned to `external_urls`.
+- Internal vs external URL classification: any URL whose host is exactly `textdata.org` or ends with `.textdata.org` is assigned to `internal_urls`; all other URLs are assigned to `external_urls`.
 
 ## Example
 
@@ -70,10 +72,15 @@ This is a real record from `data/processed/proposals.jsonl` and includes both a 
     "fa2026",
     "techreview"
   ],
-  "time": "1792783965000",
+  "time": 1792783965000,
   "type": "submission",
-  "community_id": "",
+  "community_id": "6a8e5f4ca8567d79c2f60b30",
   "source": "textdata",
   "raw_text_for_indexing": "Tech Review: Agent Memory and Context Community: Presentation Video: aidanjs7 techreview fa2026 https://textdata.org/community/6abc1276a8567d79c2f6c5f2 https://mediaspace.illinois.edu/media/t/1_ip2oww7j"
 }
 ```
+
+This example is useful because it shows the two important patterns we expect in the data:
+
+- `internal_urls` is not empty, because the proposal references a TextData community page.
+- `external_urls` is compressed to a single deduplicated value, which is easier for downstream resource-linking and topic matching.

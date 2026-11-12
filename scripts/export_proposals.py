@@ -16,7 +16,7 @@ from urllib.parse import urlparse
 
 
 URL_RE = re.compile(r"https?://[^\s)\]>\}\"']+|www\.[^\s)\]>\}\"']+")
-HASHTAG_RE = re.compile(r"#([A-Za-z0-9_]+)")
+HASHTAG_RE = re.compile(r"#([A-Za-z0-9_-]+)")
 
 
 def normalize_whitespace(text: str) -> str:
@@ -52,7 +52,7 @@ def clean_description(raw_description: str | None) -> str:
     text = re.sub(r"https?://\S+", " ", text)
     text = re.sub(r"www\.\S+", " ", text)
     text = text.replace("\r", "\n")
-    text = re.sub(r"[#*_`>\-]", " ", text)
+    text = re.sub(r"[#*_`>]", " ", text)
     text = re.sub(r"\n+", " ", text)
     text = normalize_whitespace(text)
     return text
@@ -93,8 +93,8 @@ def classify_url(url: str) -> str:
     Input: a URL string.
     Output: either "internal" if it belongs to textdata.org, otherwise "external".
     """
-    host = urlparse(url).netloc.lower()
-    if "textdata.org" in host:
+    host = urlparse(url).netloc.lower().split(":")[0]
+    if host == "textdata.org" or host.endswith(".textdata.org"):
         return "internal"
     return "external"
 
@@ -111,7 +111,7 @@ def build_clean_text(title: str, description_text: str, hashtags: list[str]) -> 
     return normalize_whitespace(" ".join(p for p in parts if p))
 
 
-def normalize_submission(raw: dict) -> dict:
+def normalize_submission(raw: dict, community_id: str = "") -> dict:
     """Normalize one raw TextData submission into the export schema.
 
     Input: one raw submission dictionary from the snapshot JSON.
@@ -122,8 +122,9 @@ def normalize_submission(raw: dict) -> dict:
     description_raw = raw.get("description") or ""
     description_clean = clean_description(description_raw)
     title_clean = normalize_whitespace(strip_markdown_links(title))
+    source_url = (raw.get("source_url") or "").strip()
 
-    all_urls = extract_urls(f"{title} {description_raw}")
+    all_urls = extract_urls(f"{title} {description_raw} {source_url}")
     internal_urls = [u for u in all_urls if classify_url(u) == "internal"]
     external_urls = [u for u in all_urls if classify_url(u) == "external"]
 
@@ -135,6 +136,14 @@ def normalize_submission(raw: dict) -> dict:
     ])
     hashtags = extract_hashtags(f"{title} {description_raw}")
 
+    time_value = raw.get("time")
+    if time_value is None or time_value == "":
+        time_value = ""
+    elif isinstance(time_value, str):
+        stripped = time_value.strip()
+        if stripped.isdigit():
+            time_value = int(stripped)
+
     return {
         "submission_id": str(submission_id),
         "title": title_clean,
@@ -142,14 +151,14 @@ def normalize_submission(raw: dict) -> dict:
         "description_clean": description_clean,
         "clean_text": build_clean_text(title_clean, description_clean, hashtags),
         "submission_url": (raw.get("submission_url") or "").strip(),
-        "source_url": (raw.get("source_url") or "").strip(),
+        "source_url": source_url,
         "internal_urls": sorted(set(internal_urls)),
         "external_urls": sorted(set(external_urls)),
         "external_domains": sorted({urlparse(u).netloc.lower() for u in external_urls if urlparse(u).netloc}),
         "hashtags": hashtags,
-        "time": raw.get("time") or "",
+        "time": time_value,
         "type": raw.get("type") or "submission",
-        "community_id": raw.get("community_id") or "",
+        "community_id": raw.get("community_id") or community_id,
         "source": raw.get("source") or "textdata",
         "raw_text_for_indexing": normalize_whitespace(combined_text),
     }
@@ -164,8 +173,9 @@ def export_jsonl(input_path: Path, output_path: Path) -> dict:
     with input_path.open("r", encoding="utf-8") as f:
         payload = json.load(f)
 
+    community_id = payload.get("community_id", "") if isinstance(payload, dict) else ""
     rows = payload.get("data", []) if isinstance(payload, dict) else payload
-    normalized = [normalize_submission(row) for row in rows]
+    normalized = [normalize_submission(row, community_id=community_id) for row in rows]
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as f:
