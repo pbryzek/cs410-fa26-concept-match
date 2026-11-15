@@ -42,12 +42,9 @@ def normalize_tokens(text: str, stopwords: set[str]) -> list[str]:
 
 def build_processed_record(record: dict, stopwords: set[str]) -> dict:
     """Create a processed representation for one proposal record."""
-    text = (
-        record.get("clean_text")
-        or " ".join(
-            part for part in [record.get("title", ""), record.get("description_clean", "")] if part
-        )
-    )
+    title = (record.get("title") or "").strip()
+    description = (record.get("description_clean") or "").strip()
+    text = " ".join(part for part in [title, description] if part)
     tokens = normalize_tokens(text, stopwords)
     processed = dict(record)
     processed["tokens"] = tokens
@@ -62,16 +59,27 @@ def compute_corpus_stats(records: list[dict]) -> dict:
     total_tokens = sum(token_counts)
     all_tokens = [token for record in records for token in record.get("tokens", [])]
     token_counts_map = Counter(all_tokens)
+    doc_frequency = Counter()
+    for record in records:
+        doc_frequency.update(set(record.get("tokens", [])))
+
+    tf_terms = [
+        {"term": term, "count": count}
+        for term, count in token_counts_map.most_common(25)
+    ]
+    df_terms = [
+        {"term": term, "count": count}
+        for term, count in doc_frequency.most_common(25)
+    ]
 
     stats = {
         "total_records": len(records),
         "total_tokens": total_tokens,
         "avg_tokens_per_record": round(total_tokens / len(records), 2) if records else 0.0,
         "unique_tokens": len(token_counts_map),
-        "top_terms": [
-            {"term": term, "count": count}
-            for term, count in token_counts_map.most_common(25)
-        ],
+        "top_terms": tf_terms,
+        "top_terms_by_tf": tf_terms,
+        "top_terms_by_df": df_terms,
         "rows_with_tokens": sum(1 for count in token_counts if count > 0),
     }
     return stats
